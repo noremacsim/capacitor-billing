@@ -97,6 +97,7 @@ public class BillingPlugin extends Plugin {
                                 try {
                                     Purchase purchase = purchases.get(0);
                                     if (purchase.getPurchaseState() == Purchase.PurchaseState.PURCHASED) {
+                                        ret = new JSObject(purchase.getOriginalJson());
                                         acknowledgeAndConsumePurchase(purchase, call);
                                     }
                                 } catch (JSONException e) {
@@ -187,5 +188,14 @@ public class BillingPlugin extends Plugin {
         };
 
         billingClient.consumeAsync(consumeParams, consumeResponseListener);
+    }
+
+    @PluginMethod()
+    public void closeBillingClient(final PluginCall call) {
+        if (billingClient != null && billingClient.isReady()) {
+            billingClient.endConnection();
+            billingClient = null;
+        }
+        call.resolve();
     }
 }
