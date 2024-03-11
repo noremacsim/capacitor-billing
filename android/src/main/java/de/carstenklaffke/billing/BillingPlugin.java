@@ -6,7 +6,9 @@ import com.android.billingclient.api.BillingClient;
 import com.android.billingclient.api.BillingClientStateListener;
 import com.android.billingclient.api.BillingFlowParams;
 import com.android.billingclient.api.BillingResult;
+import com.android.billingclient.api.ConsumeResponseListener;
 import com.android.billingclient.api.Purchase;
+import com.android.billingclient.api.ConsumeParams;
 import com.android.billingclient.api.PurchasesUpdatedListener;
 import com.android.billingclient.api.SkuDetails;
 import com.android.billingclient.api.SkuDetailsParams;
@@ -30,7 +32,7 @@ public class BillingPlugin extends Plugin {
 
     @PluginMethod()
     public void querySkuDetails(final PluginCall call) {
-        final String productId = call.getString("productId");
+        final String productId = call.getString("product");
 
         billingClient = BillingClient.newBuilder(bridge.getActivity())
                 .setListener(new PurchasesUpdatedListener() {
@@ -82,7 +84,7 @@ public class BillingPlugin extends Plugin {
 
     @PluginMethod()
     public void launchBillingFlow(final PluginCall call) {
-        final String productId = call.getString("productId");
+        final String productId = call.getString("product");
 
         billingClient = BillingClient.newBuilder(bridge.getActivity())
                 .setListener(new PurchasesUpdatedListener() {
@@ -91,8 +93,16 @@ public class BillingPlugin extends Plugin {
                         if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK
                                 && purchases != null) {
                             if (purchases != null && purchases.size() > 0) {
-                                Purchase purchase = purchases.get(0);
-                                acknowledgePurchase(purchase);
+                                JSObject ret = null;
+                                try {
+                                    Purchase purchase = purchases.get(0);
+                                    if (purchase.getPurchaseState() == Purchase.PurchaseState.PURCHASED)
+                                        ret = new JSObject(purchase.getOriginalJson());
+                                        acknowledgePurchase(purchase, call);
+                                        call.resolve(ret);
+                                } catch (JSONException e) {
+                                    e.printStackTrace();
+                                }
                             }
                         } else if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.USER_CANCELED) {
                             call.reject("canceled");
@@ -137,7 +147,7 @@ public class BillingPlugin extends Plugin {
         });
     }
 
-    private void acknowledgePurchase(Purchase purchase) {
+    private void acknowledgePurchase(Purchase purchase, PluginCall call) {
         if (!purchase.isAcknowledged()) {
             AcknowledgePurchaseParams acknowledgePurchaseParams =
                     AcknowledgePurchaseParams.newBuilder()
@@ -158,6 +168,32 @@ public class BillingPlugin extends Plugin {
         }
     }
 
+    // Inside your BillingPlugin class
+    @PluginMethod()
+    public void consumeProduct(final PluginCall call) {
+        final String purchaseToken = call.getString("purchaseToken");
+
+        ConsumeParams consumeParams = ConsumeParams.newBuilder()
+                .setPurchaseToken(purchaseToken)
+                .build();
+
+        ConsumeResponseListener consumeResponseListener = new ConsumeResponseListener() {
+            @Override
+            public void onConsumeResponse(BillingResult billingResult, String outToken) {
+                if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK) {
+                    JSObject ret = new JSObject();
+                    ret.put("message", "Product consumed successfully");
+                    call.resolve(ret);
+                } else {
+                    // Log error
+                    call.reject(billingResult);
+                }
+            }
+        };
+
+        billingClient.consumeAsync(consumeParams, consumeResponseListener);
+    }
+
     @PluginMethod()
     public void sendAck(final PluginCall call) {
         AcknowledgePurchaseParams acknowledgePurchaseParams =
@@ -173,7 +209,7 @@ public class BillingPlugin extends Plugin {
                 } else if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.USER_CANCELED) {
                     call.reject("canceled");
                 } else {
-                    call.reject("error");
+                    call.reject(billingResult.getDebugMessage());
                 }
             }
         };
