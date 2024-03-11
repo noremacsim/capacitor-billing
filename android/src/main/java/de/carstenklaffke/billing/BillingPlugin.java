@@ -96,10 +96,9 @@ public class BillingPlugin extends Plugin {
                                 JSObject ret = null;
                                 try {
                                     Purchase purchase = purchases.get(0);
-                                    if (purchase.getPurchaseState() == Purchase.PurchaseState.PURCHASED)
-                                        ret = new JSObject(purchase.getOriginalJson());
-                                        acknowledgePurchase(purchase, call);
-                                        call.resolve(ret);
+                                    if (purchase.getPurchaseState() == Purchase.PurchaseState.PURCHASED) {
+                                        acknowledgeAndConsumePurchase(purchase, call);
+                                    }
                                 } catch (JSONException e) {
                                     e.printStackTrace();
                                 }
@@ -147,7 +146,7 @@ public class BillingPlugin extends Plugin {
         });
     }
 
-    private void acknowledgePurchase(Purchase purchase, PluginCall call) {
+    private void acknowledgeAndConsumePurchase(Purchase purchase, PluginCall call) {
         if (!purchase.isAcknowledged()) {
             AcknowledgePurchaseParams acknowledgePurchaseParams =
                     AcknowledgePurchaseParams.newBuilder()
@@ -157,24 +156,21 @@ public class BillingPlugin extends Plugin {
                 @Override
                 public void onAcknowledgePurchaseResponse(BillingResult billingResult) {
                     if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK) {
-                        JSObject ret = null;
-                        call.resolve(ret); // Optionally resolve the promise here if needed
+                        consumePurchase(purchase, call);
                     } else {
-                        call.reject("error"); // Handle acknowledgment error
+                        call.reject("error acknowledging purchase");
                     }
                 }
             };
             billingClient.acknowledgePurchase(acknowledgePurchaseParams, acknowledgePurchaseResponseListener);
+        } else {
+            consumePurchase(purchase, call);
         }
     }
 
-    // Inside your BillingPlugin class
-    @PluginMethod()
-    public void consumeProduct(final PluginCall call) {
-        final String purchaseToken = call.getString("purchaseToken");
-
+    private void consumePurchase(Purchase purchase, PluginCall call) {
         ConsumeParams consumeParams = ConsumeParams.newBuilder()
-                .setPurchaseToken(purchaseToken)
+                .setPurchaseToken(purchase.getPurchaseToken())
                 .build();
 
         ConsumeResponseListener consumeResponseListener = new ConsumeResponseListener() {
@@ -185,34 +181,11 @@ public class BillingPlugin extends Plugin {
                     ret.put("message", "Product consumed successfully");
                     call.resolve(ret);
                 } else {
-                    // Log error
-                    call.reject(billingResult);
+                    call.reject("error consuming purchase");
                 }
             }
         };
 
         billingClient.consumeAsync(consumeParams, consumeResponseListener);
-    }
-
-    @PluginMethod()
-    public void sendAck(final PluginCall call) {
-        AcknowledgePurchaseParams acknowledgePurchaseParams =
-                AcknowledgePurchaseParams.newBuilder()
-                        .setPurchaseToken(call.getString("purchaseToken"))
-                        .build();
-        AcknowledgePurchaseResponseListener acknowledgePurchaseResponseListener = new AcknowledgePurchaseResponseListener() {
-            @Override
-            public void onAcknowledgePurchaseResponse(BillingResult billingResult) {
-                if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK) {
-                    JSObject ret = null;
-                    call.resolve(ret);
-                } else if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.USER_CANCELED) {
-                    call.reject("canceled");
-                } else {
-                    call.reject(billingResult.getDebugMessage());
-                }
-            }
-        };
-        billingClient.acknowledgePurchase(acknowledgePurchaseParams, acknowledgePurchaseResponseListener);
     }
 }
