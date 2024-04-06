@@ -21,6 +21,7 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
 import org.json.JSONException;
+import android.util.Log;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -29,6 +30,64 @@ import java.util.List;
 public class BillingPlugin extends Plugin {
 
     private BillingClient billingClient;
+
+    @PluginMethod()
+    public void queryAllSkuDetails(final PluginCall call) {
+        billingClient = BillingClient.newBuilder(bridge.getActivity())
+                .setListener(new PurchasesUpdatedListener() {
+                    @Override
+                    public void onPurchasesUpdated(BillingResult billingResult, List<Purchase> list) {
+
+                    }
+                })
+                .enablePendingPurchases()
+                .build();
+
+        billingClient.startConnection(new BillingClientStateListener() {
+            @Override
+            public void onBillingSetupFinished(BillingResult billingResult) {
+                if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK) {
+                    // Query all products
+                    List<String> skuList = new ArrayList<>();
+                    skuList.add("all"); // Just a placeholder, you might have different logic for retrieving all products
+                    String type = call.getString("type", "INAPP").equals("SUBS") ? BillingClient.SkuType.SUBS : BillingClient.SkuType.INAPP;
+                    SkuDetailsParams.Builder params = SkuDetailsParams.newBuilder();
+                    params.setSkusList(skuList).setType(type);
+                    billingClient.querySkuDetailsAsync(params.build(),
+                            new SkuDetailsResponseListener() {
+                                @Override
+                                public void onSkuDetailsResponse(BillingResult billingResult,
+                                                                 List<SkuDetails> skuDetailsList) {
+                                    if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK) {
+                                        if (skuDetailsList != null && skuDetailsList.size() > 0) {
+                                            JSONArray skuDetailsArray = new JSONArray();
+                                            for (SkuDetails skuDetails : skuDetailsList) {
+                                                skuDetailsArray.put(skuDetails.getOriginalJson());
+                                            }
+                                            JSArray ret = new JSArray(skuDetailsArray.toString());
+                                            call.resolve(ret);
+                                        } else {
+                                            // Log a message indicating that no SKU details were retrieved
+                                            Log.e("BillingPlugin", "No SKU details retrieved");
+                                            call.reject("No SKU details retrieved");
+                                        }
+                                    } else {
+                                        // Log the billing result in case of an error
+                                        Log.e("BillingPlugin", "Error querying SKU details. Response code: " + billingResult.getResponseCode());
+                                        call.reject("Error querying SKU details. Response code: " + billingResult.getResponseCode());
+                                    }
+                                }
+                            });
+                }
+            }
+
+            @Override
+            public void onBillingServiceDisconnected() {
+                // Try to restart the connection on the next request to
+                // Google Play by calling the startConnection() method.
+            }
+        });
+    }
 
     @PluginMethod()
     public void querySkuDetails(final PluginCall call) {
@@ -54,23 +113,31 @@ public class BillingPlugin extends Plugin {
                     SkuDetailsParams.Builder params = SkuDetailsParams.newBuilder();
                     params.setSkusList(skuList).setType(type);
                     billingClient.querySkuDetailsAsync(params.build(),
-                            new SkuDetailsResponseListener() {
-                                @Override
-                                public void onSkuDetailsResponse(BillingResult billingResult,
-                                                                 List<SkuDetails> skuDetailsList) {
+                        new SkuDetailsResponseListener() {
+                            @Override
+                            public void onSkuDetailsResponse(BillingResult billingResult,
+                                                             List<SkuDetails> skuDetailsList) {
+                                if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK) {
                                     if (skuDetailsList != null && skuDetailsList.size() > 0) {
-                                        JSObject ret = null;
                                         try {
-                                            ret = new JSObject(skuDetailsList.get(0).getOriginalJson());
+                                            JSObject ret = new JSObject(skuDetailsList.get(0).getOriginalJson());
+                                            call.resolve(ret);
                                         } catch (JSONException e) {
                                             e.printStackTrace();
+                                            call.reject("error parsing SKU details JSON: " + e.getMessage());
                                         }
-                                        call.resolve(ret);
-                                    } else{
-                                        call.reject("error");
+                                    } else {
+                                        // Log a message indicating that no SKU details were retrieved
+                                        Log.e("BillingPlugin", "No SKU details retrieved");
+                                        call.reject("No SKU details retrieved");
                                     }
+                                } else {
+                                    // Log the billing result in case of an error
+                                    Log.e("BillingPlugin", "Error querying SKU details. Response code: " + billingResult.getResponseCode());
+                                    call.reject("Error querying SKU details. Response code: " + billingResult.getResponseCode());
                                 }
-                            });
+                            }
+                        });
                 }
             }
 
