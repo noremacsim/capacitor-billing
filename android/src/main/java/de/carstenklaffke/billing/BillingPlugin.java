@@ -19,6 +19,10 @@ import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import com.getcapacitor.JSArray;
+import org.json.JSONArray;
+import org.json.JSONObject;
+import org.json.JSONException;
 
 import org.json.JSONException;
 import android.util.Log;
@@ -49,7 +53,13 @@ public class BillingPlugin extends Plugin {
                 if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK) {
                     // Query all products
                     List<String> skuList = new ArrayList<>();
-                    skuList.add("all"); // Just a placeholder, you might have different logic for retrieving all products
+                    skuList.add("25_guests");
+                    skuList.add("50_guests");
+                    skuList.add("100_guests");
+                    skuList.add("150_guests");
+                    skuList.add("200_guests");
+                    skuList.add("250_guests");
+                    skuList.add("500_guests");
                     String type = call.getString("type", "INAPP").equals("SUBS") ? BillingClient.SkuType.SUBS : BillingClient.SkuType.INAPP;
                     SkuDetailsParams.Builder params = SkuDetailsParams.newBuilder();
                     params.setSkusList(skuList).setType(type);
@@ -60,12 +70,26 @@ public class BillingPlugin extends Plugin {
                                                                  List<SkuDetails> skuDetailsList) {
                                     if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK) {
                                         if (skuDetailsList != null && skuDetailsList.size() > 0) {
-                                            JSONArray skuDetailsArray = new JSONArray();
+
+                                            JSObject result = new JSObject();
+
+                                            // Iterate through each SkuDetails and add them to the JSObject keyed by productId
                                             for (SkuDetails skuDetails : skuDetailsList) {
-                                                skuDetailsArray.put(skuDetails.getOriginalJson());
+                                                String productId = skuDetails.getSku();
+                                                JSObject skuObject = new JSObject();
+                                                skuObject.put("productId", skuDetails.getSku());
+                                                skuObject.put("type", skuDetails.getType());
+                                                skuObject.put("title", skuDetails.getTitle());
+                                                skuObject.put("name", skuDetails.getTitle());
+                                                skuObject.put("iconUrl", skuDetails.getIconUrl());
+                                                skuObject.put("description", skuDetails.getDescription());
+                                                skuObject.put("price", skuDetails.getPrice());
+                                                skuObject.put("price_amount_micros", skuDetails.getPriceAmountMicros());
+                                                skuObject.put("price_currency_code", skuDetails.getPriceCurrencyCode());
+                                                // Add each skuObject to the result JSObject, keyed by productId
+                                                result.put(productId, skuObject);
                                             }
-                                            JSArray ret = new JSArray(skuDetailsArray.toString());
-                                            call.resolve(ret);
+                                            call.resolve(result);
                                         } else {
                                             // Log a message indicating that no SKU details were retrieved
                                             Log.e("BillingPlugin", "No SKU details retrieved");
